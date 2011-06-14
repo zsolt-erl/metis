@@ -1,0 +1,342 @@
+#!/bin/sh
+
+yawsdir="%yawsdir%"
+vardir="%vardir%"
+erl="%erl%"
+run_erl="%run_erl%"
+to_erl="%to_erl%"
+
+# erlexec requires HOME to be set, and some distros
+# run /etc/rc scripts without HOME being set 
+if [ -z "$HOME" ]; then
+    if [ `id -u` = 0 -a -d /root ]; then
+        export HOME=/root
+    else
+        export HOME=/tmp
+    fi
+fi
+
+case `uname` in
+    CYGWIN*)
+        yawsdir=`cygpath -m $yawsdir`
+        werl="%werl%"
+        delim=/;;
+    *)
+        delim=/
+esac
+
+
+ENV_PGM=`which env`
+
+
+help()
+{
+    echo "usage:  "
+    echo ""
+    echo
+    echo "       yaws -i | --interactive       -- interactive (no daemon) mode"
+    echo "       yaws -w | --winteractive      -- cygwin interactive (werl) "
+    echo "       yaws --daemon                 -- daemon mode"
+
+    echo ""
+
+    echo ""
+    echo "       Auxiliary flags for the daemon: "
+    echo "            --id Id             --  set system id"
+    echo "            --debug             --  debug mode"
+    echo "            --nodebug           --  turn off debug mode"
+    echo "            --conf File         --  set config file"
+    echo "            --tracetraf         --  trace traffic"
+    echo "            --tracehttp         --  trace http traffic"
+    echo "            --traceout          --  trace output to stdout"
+    echo "            --version           --  print version"
+    echo "            --pa path           --  add load path"
+    echo "            --mnesiadir dir     --  start Mnesia in dir"
+    echo "            --proto_dist Mod    --  use Mod for distrib"
+    echo "            --sname xxx         --  start with sname xxx"
+    echo "            --name xxx          --  start with name xxx"
+    echo "            --runmod mod        --  call mod:start/0 at startup"
+    echo "            --heart             --  auto restart yaws if it crashes"
+    echo "            --heart-restart=C,T --  allow C heart restarts in T seconds"
+    echo "            --erlarg X          --  pass argument X to $erl"
+    echo "            --setcookie X       --  set an erlang cookie"
+    echo "            --run_erl X         --  use run_erl with pipe-id X"
+    echo "            --to_erl X          --  connect to pipe-id X"
+    echo "            --disable-kpoll     --  pass +K false to erlang"
+    echo "            --umask umaskval    --  set process umask to umaskval"
+    echo ""
+
+    echo "ctl functions ... "
+    echo "        yaws --hup [--id ID]                 -- hup the daemon, reload conf"
+    echo "        yaws --stop [--id ID]                -- stop the daemon "
+    echo "        yaws --debug-dump [--id ID]          -- produce a debug dump "
+    echo "        yaws --status [--id ID]              -- query the daemon status "
+    echo "        yaws --load Modules                  -- load modules "
+    echo "        yaws --ls                            -- list Yaws nodes and their status"
+    echo "        yaws --ctltrace traffic|http         -- toggle trace of running daemon"
+    echo "        yaws --check YawsFile [IncDirs]      -- test compile File "
+    echo "        yaws --wait-started[=secs] [--id ID] -- wait for daemon to be ready"
+    echo "        yaws --stats [--id ID]               -- show daemon statistics"
+    exit 1
+}
+
+
+
+debug=""
+daemon=""
+interactive=""
+trace=""
+conf=""
+runmod=""
+sname=""
+heart=""
+xpath=""
+mnesia=""
+id=""
+pdist=""
+erlarg=""
+kpoll=true
+call_wait_started=""
+program=$0
+
+wait_started() {
+    i=0
+    count=$1
+    while [ $i -lt $count ]; do
+        sleep 1
+        i=`expr $i + 1`
+        idarg="--id ${id:-default}"
+        ${program}  ${idarg} --status 2>&1 > /dev/null
+        [ $? = 0 ] && exit 0
+    done
+    echo "No yaws system responding for id=$id"
+    exit 1
+}
+
+now=`date -u +%s`
+restarts=1
+starttime=$now
+if [ "$HEART" = true ]; then
+    # we were restarted by heart, make sure we haven't reached our restart count
+    # if we get $YAWS_HEART_COUNT restarts within $YAWS_HEART_SECS seconds, we
+    # exit completely
+    # if both are 0, disable restart checking and just always restart
+    if [ $YAWS_HEART_COUNT -ne 0 -o $YAWS_HEART_SECS -ne 0 ]; then
+        timediff=`expr $now - $YAWS_HEART_START`
+        if [ $timediff -le $YAWS_HEART_SECS ]; then
+            if [ $YAWS_HEART_RESTARTS -eq $YAWS_HEART_COUNT ]; then
+                echo $YAWS_HEART_COUNT restarts attempted within $YAWS_HEART_SECS seconds, exiting
+                exit 1
+            else
+                # we haven't reached the restart max count yet, but we're still
+                # within the $YAWS_HEART_SECS second window so increment the counter
+                # but keep the same start time
+                restarts=`expr $YAWS_HEART_RESTARTS + 1`
+                starttime=$YAWS_HEART_START
+            fi
+        fi
+    fi
+fi
+HEART_COMMAND="$ENV_PGM HEART=true YAWS_HEART_RESTARTS=$restarts YAWS_HEART_START=$starttime $program"
+# This loop quotes arguments containing whitespace so they can be passed
+# properly to the next heart restart
+for arg in "$@"; do
+    ws=`( set X $arg ; echo $# )`
+    if [ "$ws" -gt 2 ]; then
+        HEART_COMMAND="$HEART_COMMAND '$arg'"
+    else
+        HEART_COMMAND="$HEART_COMMAND $arg"
+    fi
+done
+export HEART_COMMAND
+
+while [ $# -gt 0 ]
+  do
+  arg=$1
+  shift;
+  case $arg in
+      -i|--interactive)
+          interactive="true";
+          debug=" -yaws debug ";
+          daemon="";;
+      -w|--winteractive)
+          interactive="true";
+          debug=" -yaws debug ";
+          daemon="";
+          erl=$werl;;
+      -D|--daemon)
+          daemon=" -detached ";;
+      --wait-started=*)
+          call_wait_started=`echo $arg | sed -e 's/--wait-started=//'`
+          num=`expr "$call_wait_started" : "([0-9]*)"`
+          if [ "$num" != "$call_wait_started" ]; then
+              echo error: argument to --wait-started is $call_wait_started, not a number
+              exit 1
+          fi;;
+      --wait-started)
+          call_wait_started=6;;
+      -d|--debug)
+          debug=" -boot start_sasl -yaws debug ";;
+      --nodebug)
+          debug="";;
+      -t|--tracetraf)
+          trace=" -yaws trace traffic ";;
+      -T|--tracehttp)
+          trace=" -yaws trace http ";;
+      -I|--id)
+          id=$1
+          shift;;
+      -x|--traceout)
+          traceoutput=" -yaws traceoutput ";;
+      --trace)
+          traceoutput=" -yaws traceoutput ";
+          trace=" -yaws trace traffic ";;
+      -M|--mnesiadir)
+          mnesia=" -mnesia dir '\"$1\"' -run mnesia start"
+          shift;;
+      -c|--conf)
+          conf=" -conf $1 "
+          shift;;
+      -pa|--pa)
+          xpath=" $xpath -pa $1 "
+          shift;;
+      -r|--runmod)
+          runmod=" -runmod $1 "
+          shift;;
+      -h|--hup)
+          ex="$erl -noshell -pa ${yawsdir}${delim}ebin -s yaws_ctl hup";;
+      -s|--stop)
+          ex="$erl -noshell -pa ${yawsdir}${delim}ebin -s yaws_ctl stop";;
+      -ls|--ls)
+          ex="$erl -noshell -pa ${yawsdir}${delim}ebin -s yaws_ctl ls";;
+      -S|--status)
+          ex="$erl -noshell -pa ${yawsdir}${delim}ebin -s yaws_ctl status";;
+      --stats)
+          ex="$erl -noshell -pa ${yawsdir}${delim}ebin -s yaws_ctl stats";;
+      -load|--load)
+          loadid=${id:-default}
+          $erl -noshell -pa ${yawsdir}${delim}ebin -s yaws_ctl load $* $loadid
+          exit 0;;
+      --debug-dump)
+          ddid=${id:-default}
+          $erl -noshell -pa ${yawsdir}${delim}ebin -s yaws_ctl debug_dump $ddid
+          exit 0;;
+      -j|--ctltrace)
+          ex="$erl -noshell -pa ${yawsdir}${delim}ebin -s yaws_ctl trace $1"
+          shift;;
+      -v|--version)
+          exec $erl -noshell -pa ${yawsdir}${delim}ebin -s yaws printversion;
+          exit 0;;
+      --sname|-sname)
+          sname=" -sname $1 "
+          shift;;
+      -name|--name)
+          sname=" -name $1 "
+          shift;;
+      --disable-kpoll)
+          kpoll=false;;
+      -heart|--heart)
+          heart=" -heart ";;
+      --heart-restart=*)
+          vals=`echo $arg | sed -e 's/--heart-restart=//'`
+          saveifs="$IFS"
+          IFS=,
+          var='YAWS_HEART_COUNT'
+          for v in $vals; do
+              eval "$var=$v"
+              var='YAWS_HEART_SECS'
+          done
+          num=`expr "$YAWS_HEART_COUNT" : '\([0-9]*\)'`
+          if [ -z "$num" -o "$num" != "$YAWS_HEART_COUNT" ]; then
+              echo error: count argument to --heart-restart is '"'$YAWS_HEART_COUNT'"': not a number
+              exit 1
+          fi
+          num=`expr "$YAWS_HEART_SECS" : '\([0-9]*\)'`
+          if [ -z "$num" -o "$num" != "$YAWS_HEART_SECS" ]; then
+              echo error: time argument to --heart-restart is '"'$YAWS_HEART_SECS'"': not a number
+              exit 1
+          fi
+          IFS="$saveifs"
+          heart=" -heart ";;
+      -proto_dist|--proto_dist)
+          pdist=" -proto_dist $1 "
+          shift;;
+      -setcookie|--setcookie)
+          erlarg="$erlarg -setcookie $1 "
+          shift;;
+      -erlarg|--erlarg)
+          erlarg="$erlarg $1 "
+          shift;;
+      -check|--check)
+          checkid=${id:-default}
+          mkdir ${HOME}/.yaws/yaws 2> /dev/null
+          mkdir ${HOME}/.yaws/yaws/$checkid 2> /dev/null
+          out=`exec $erl -noshell -pa ${yawsdir}${delim}ebin $xpath -s yaws_ctl check $checkid $*`
+          if [ "$?" = "0" ]; then
+              echo "$out"
+              echo "$1" ok
+              exit 0
+          fi
+          echo "$out"
+          exit 1;;
+      --to_erl)
+          TO_ERL=yes
+          PIPE_DIR="${vardir}/run/yaws/pipe/$1"
+          shift;;
+      --run_erl)
+          RUN_ERL=yes
+          daemon=""
+          PIPE_DIR="${vardir}/run/yaws/pipe/$1"
+          LOG_DIR="${vardir}/log/yaws/erlang-log/$1"
+          shift;;
+      --umask)
+          umask $1
+          shift;;
+      *)
+          help
+  esac
+done
+YAWS_HEART_COUNT=${YAWS_HEART_COUNT:-5}
+YAWS_HEART_SECS=${YAWS_HEART_SECS:-60}
+export YAWS_HEART_COUNT YAWS_HEART_SECS
+
+[ -n "$call_wait_started" ] && wait_started $call_wait_started
+
+if [ -n "$ex" ]; then
+    [ -n "$id" ] && execid=$id || execid=default
+    exec $ex $execid
+    exit 0
+fi
+
+if [ -n "$TO_ERL" ]; then
+    $to_erl $PIPE_DIR/
+    exit 0
+fi
+
+if [ -n "$RUN_ERL" ]; then
+    if [ ! -d $LOG_DIR ]; then
+        mkdir -p $LOG_DIR
+    fi
+    if [ ! -d $PIPE_DIR ]; then
+        mkdir -p $PIPE_DIR
+    fi
+    RUN_ERL="$run_erl -daemon $PIPE_DIR/ $LOG_DIR"
+else
+    RUN_ERL="eval"
+fi
+
+if [ -n "$id" ]; then
+    id="-yaws id $id"
+fi
+
+trace="$trace $traceoutput"
+
+[ "$run_erl" = "eval" ] && [ -z "$daemon" ] && [ -z "$interactive" ] && help
+
+XEC="$daemon $heart +K $kpoll -pa ${yawsdir}${delim}ebin $xpath $sname $pdist $erlarg $debug -run yaws $trace $conf $runmod $mnesia $id"
+
+if [ -z "$heart" ] || [ -z "$daemon" ]; then
+    unset HEART_COMMAND
+fi
+
+$RUN_ERL "exec $erl $XEC"

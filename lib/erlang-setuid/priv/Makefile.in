@@ -1,0 +1,11 @@
+ERL_INTERFACE=@ERLANG_LIB_DIR_erl_interface@
+ERL_ROOT=@ERLANG_ROOT_DIR@
+OUTPUT=../ebin/setuid_drv.so
+LDFLAGS=-shared -fPIC -undefined -lei -lerl_interface -L${ERL_INTERFACE}/lib 
+CFLAGS=-o ${OUTPUT} -I${ERL_ROOT}/usr/include -I${ERL_INTERFACE}/include/ -Wall -W -Wno-unused-parameter
+
+all:
+	gcc setuid_drv.c ${LDFLAGS} ${CFLAGS} -O2
+
+debug:
+	gcc setuid_drv.c ${LDFLAGS} ${CFLAGS} -ggdb -O0

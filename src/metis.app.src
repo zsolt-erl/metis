@@ -1,0 +1,27 @@
+{application, metis,
+ [
+  {description, "Erlang Mail Transfer Agent"},
+  {vsn, "0.1"},
+  {modules, [
+  	     metis_boot,
+  	     metis_sup.erl,
+	     metis_smtp_server.erl,
+	     client_mngr.erl,
+	     binstr.erl,
+	     gen_smtp_client.erl,
+	     gen_smtp_server_session.erl,
+	     socket.erl,
+	     gen_smtp_server.erl,
+	     mimemail.erl,
+	     smtp_util.erl
+	    ]},
+  {registered, [
+		metis_sup
+	       ]},
+  {applications, [
+		  kernel, 
+		  stdlib
+		 ]},
+  {mod, {metis_boot,[]}},
+  {env, []}
+ ]}.

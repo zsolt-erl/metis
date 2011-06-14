@@ -1,0 +1,44 @@
+<erl>
+
+-include("metis.hrl").
+
+out(A) ->
+%%    io:format('~n-----ROW DATA REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    create_response(A).
+
+create_response(A)->
+    {ok, RCPid}=riakc_pb_socket:start_link('127.0.0.1', 8087),
+    {ok, BinKeys}=riakc_pb_socket:list_keys(RCPid, <<"eventlog">>),
+    Keys=lists:sort( [ binary_to_term(BinK) || BinK <- BinKeys ] ),
+%%    Keys=get_key_list(),
+    KVPairs=lists:map(fun(Key)->
+			      HTMLVal=
+				  case riakc_pb_socket:get(RCPid, <<"eventlog">>, term_to_binary(Key)) of
+				      {ok, Obj} ->
+					  Value=lists:keysort(3, binary_to_term( riakc_obj:get_value(Obj) )),
+					  ValueTable={table, [{border, "1"}], 
+						      [ {tr, [], {td, [], [{p, [], io_lib:format("~p", [Action])},
+									   {p, [], io_lib:format("~p", [QC])},
+									   {p, [], io_lib:format("~p", [Time])}]}} || {Action, QC, Time} <-Value ]};
+				      _ ->
+					  {p, [], "notfound"}
+				  end,
+			      {misc:datetime_to_string( calendar:gregorian_seconds_to_datetime( Key ) ),   %% key
+			       HTMLVal}                                                                 %% value
+		      end,
+    		      Keys),
+
+    EHTMLRows=lists:map(fun({Key, Value})->{tr, [], [{td, [{width, "200px"}], Key}, {td, [], Value}]} end, KVPairs),
+    EHTMLTable={table, [{border, "1"}], EHTMLRows},
+
+    {ehtml, EHTMLTable}.
+
+get_key_list()->
+    {Date,{Hr,Min,Sec}}=erlang:localtime(),
+    LatestKey=calendar:datetime_to_gregorian_seconds({Date, {Hr, trunc(Min/5)*5, 0}}),
+    io:format("Latestkey:~p~n",[LatestKey]),
+    %% keys in 5min intervals
+    [LatestKey-I*300 || I <- lists:seq(0,24)].
+</erl>
+
+

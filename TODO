@@ -1,0 +1,26 @@
+DONE- handle upper/lowercase addresses (basically convert everything to lower case and config files should have lower case)
+  local part needs to stay unchanged, only convert domainname
+  >> it converts only when checking, otherwise saves in original form
+
+- queue_mngr needs to create queue dir at init if it's missing
+
+- queue_mngr needs to handle when a queue goes down (alert server, restart queue)
+
+- what happenes with local delivery that ends up in the wrong queue?
+
+DONE-  ADD LOCAL_FQDN TO ROUTE_TO !!
+
+DONE- add viewing, filtering maillog to front end  (start, end date, filter by fields)
+  show raw data 
+  show breakdowns  (sent, deleted, queued, softbounce, hardbounce)
+
+- CC, BCC handling
+
+- handle undeliverable mail (local/smtp), send proper non-delivery notice
+
+- upgrade to non blocking gen_smtp_server
+
+- make it fully compile with rebar (including getting deps)
+
+- rewrite distribution using riak-core to be able to run several servers
+

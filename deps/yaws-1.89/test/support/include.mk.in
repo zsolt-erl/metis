@@ -1,0 +1,58 @@
+
+
+ERL="@ERL@"
+ERLC="@ERLC@"
+YTOP="@YTOP@"
+
+YAWS=$(YTOP)/bin/yaws
+
+%.beam: %.erl
+	"$(ERLC)" -Ddebug $<
+
+none:
+	echo "Do make clean|all|test"
+	exit 1
+
+.PHONY: tclean setup start i connect status stop
+
+tclean:
+	@rm -rf logs *.beam *.log yaws.conf erl_crash.dump 2> /dev/null || true
+
+setup:
+	@rm -rf logs 2> /dev/null
+	@mkdir logs
+
+start:	setup
+	$(YTOP)/bin/yaws -sname test --daemon --id testid --conf ./yaws.conf
+	$(YTOP)/bin/yaws --id testid --wait-started
+
+
+## Interactive node
+i:
+	$(YTOP)/bin/yaws -sname test -i --id testid --conf ./yaws.conf
+
+PA =           -pa $(YTOP)/test/ibrowse/ebin  \
+               -pa $(YTOP)/test/src  \
+	       -pa $(YTOP)/ebin
+
+## connect to existing yaws node
+connect:
+	$(ERL) -sname client $(PA) \
+	       -s test connect `hostname`
+
+
+status:
+	$(YTOP)/bin/yaws  --id testid --status
+stop:
+	$(YTOP)/bin/yaws --id testid --stop || true
+	@sleep 5
+
+stdconf:
+	cat ../conf/stdconf.conf | \
+	../../scripts/Subst %YTOP% $(YTOP) \
+   	> yaws.conf
+
+authconf:
+	cat ../conf/authconf.conf | \
+	../../scripts/Subst %YTOP% $(YTOP) \
+  	> yaws.conf

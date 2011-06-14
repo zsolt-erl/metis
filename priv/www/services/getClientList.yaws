@@ -1,0 +1,38 @@
+<erl>
+-include("metis.hrl").
+
+-record(counters, {
+	    queued=0,
+	    sent  =0,
+	    deleted   =0,
+	    softbounce=0,
+	    hardbounce=0,
+	    ptqueue
+	   }).
+
+
+out(A) ->
+%%    io:format('~n-----CLIENT LIST REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    MasterNode=A#arg.opaque,
+    ?minfo(getClientList, "master node:~p", [MasterNode]),
+    {clientlist, ClientList}=gen_server:call({client_mngr, MasterNode}, get_clientlist),
+    JSONClientList={struct, 
+		    [{clientlist, 
+		      {array, 
+		       lists:map(fun(#client{client_name=Name,
+					     relay_from=RelayFrom,
+					     relay_to=RelayTo,
+					     statistics={Load, QueueLen}})->
+					 
+					 {struct, [{name,atom_to_list(Name)}, 
+						   {relay_from, {array, [User++"@"++Host || {User,Host}<-RelayFrom]}}, 
+						   {relay_to, {array, [User++"@"++Host || {User,Host}<-RelayTo]}},
+						   {load, Load}, 
+						   {queue_len, QueueLen}]}
+				 end, ClientList)}}]},
+    
+    json:encode(JSONClientList).
+</erl>

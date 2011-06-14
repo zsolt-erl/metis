@@ -1,0 +1,27 @@
+1may11
+- metis_smtp_server tries to send to non existent queue
+  if a queue doesn't start it still tries to send emails to it and
+  crashes (can't send to nonexistent node)
+
+1may11
+- it assumes that procmail is /usr/bin/procmail and wont deliver if it's not there
+
+1may11
+- handle local_delivery_failure as permanent_failure
+  change queue_mngr where it handles permanent_failure msg
+
+testing 4jun11
+- metis log   does not work on CentOS   (some problem with lists:foreach/2 )
+maybe because hriaklogger dies
+
+testing 4jun11
+- hriaklogger dies after couple of mins
+still dies, cannot find sg in protobuffs
+
+
+testing 5jun11
+- handle nasty mx lookup results  (eg. 0.0.0.0)
+
+5jun11
+- queue dir, log dirs need to be writeable by run_as user
+

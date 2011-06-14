@@ -1,0 +1,34 @@
+{
+  "info" : 
+  {
+    "name" : "QxProtovis",
+
+    "summary" : "Protovis Integration for Qooxdoo",
+    "description" : "Create Protovis charts in your qooxdoo application.",
+    
+    "homepage" : "http://contrib.qooxdoo.org/project/QxProtovis",
+
+    "license" : "LGPL/EPL",
+    "authors" :
+    [
+      {
+        "name" : "Tobias Oetiker (oetiker)",
+        "email" : "tobi@oetiker.ch"
+      }
+    ],
+
+    "version" : "trunk",
+    "qooxdoo-versions": ["1.2"]
+  },
+  
+  "provides" : 
+  {
+    "namespace"   : "qxprotovis",
+    "encoding"    : "utf-8",
+    "class"       : "source/class",
+    "resource"    : "source/resource",
+    "translation" : "source/translation",
+    "type"        : "contribution"
+  }
+}
+

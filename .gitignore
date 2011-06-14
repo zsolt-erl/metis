@@ -1,0 +1,17 @@
+*~
+*#
+*.swp
+*.o
+*.so
+*.log
+*.access
+*.access.old
+*.beam
+mta.conf
+erl_crash.dump
+/ebin/
+/doc/
+build/
+/priv/stdin_forcer
+/priv/www/qoo12/
+/priv/www/mtagui/source/script/

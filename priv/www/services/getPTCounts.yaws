@@ -1,0 +1,36 @@
+<erl>
+
+-include("metis.hrl").
+
+-record(counters, {
+	  queued=0,
+	  sent  =0,
+	  deleted   =0,
+	  softbounce=0,
+	  hardbounce=0,
+	  ptqueue
+	 }).
+
+
+out(A) ->
+%%    io:format('~n-----PT COUNTS REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    ?minfo(getPTCounts,"request from:~p ",[element(1,A#arg.client_ip_port)]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    %% get PT counts (it's a proplist)
+    MasterNode=A#arg.opaque,
+    Counts=rpc:call(MasterNode, stat_mngr, call, [hsimplecount, get_all_totals]),
+    JSONCounts={struct, Counts},
+
+    TimeLines=rpc:call(MasterNode, stat_mngr, call, [hsimplecount, get_tl]),
+    TimeLinesForGraphs= [{Sent,Rcvd,Queue} || {Key, #counters{sent=Sent, queued=Rcvd, ptqueue=Queue}} <- TimeLines],
+    {SentTimeLine, RcvdTimeLine, QueueTimeLine} = lists:unzip3(TimeLinesForGraphs),
+    JSONTimeLines=
+     	{struct, [{rcvdtl, {array, RcvdTimeLine}}, {senttl, {array, SentTimeLine}}, {queuetl, {array, QueueTimeLine}}]},
+    
+    JSON={struct, [{counts, JSONCounts}, {timelines, JSONTimeLines}]},
+
+    json:encode(JSON).
+
+</erl>

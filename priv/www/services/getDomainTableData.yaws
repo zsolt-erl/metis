@@ -1,0 +1,26 @@
+<erl>
+
+-include("metis.hrl").
+
+out(A) ->
+    io:format('~n-----DOMAIN TABLE DATA REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    {ok,NodeStr}      = queryvar(A,"node"),
+
+    Node=list_to_atom(NodeStr),
+    {queue_mngr, Node} ! {self(), get_domainctrl_data},
+    
+    DomainCtrlData=
+	receive
+	    {Pid, domainctrl_data, DCData} ->
+		DCData
+	after 5000 ->
+		[]
+	end,
+    JSON={array, DomainCtrlData},
+    json:encode(JSON).
+</erl>
+
+

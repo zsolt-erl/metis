@@ -1,0 +1,43 @@
+<erl>
+
+-include("metis.hrl").
+
+out(A) ->
+    io:format('~n-----QUEUE DATA REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    CountFun=fun(Record, {SubjectDistrib, TryCountDistrib, DomainDistrib})->
+		     Subject=proplists:get_value(subject, Record#qc.opaque, []),
+		     NewSubjectDistrib=misc:cnt_distrib(Subject, SubjectDistrib),
+
+		     TryCount=Record#qc.try_count,
+		     NewTryCountDistrib=misc:cnt_distrib(TryCount, TryCountDistrib),
+
+		     [_User, Domain | _]=string:tokens(Record#qc.receiver, "@"),
+		     NewDomainDistrib=misc:cnt_distrib(Domain, DomainDistrib),
+
+		     {NewSubjectDistrib, NewTryCountDistrib, NewDomainDistrib}
+	     end,
+
+    Transaction=fun()->mnesia:foldl(CountFun, {[],[],[]}, qc) end,
+    
+    %% SubjectD, TryD are proplists containing the distributons of Subject, TryCount in the queue
+    {atomic, {SubjectD, TryD, DomainD}}=mnesia:transaction(Transaction),
+
+    %% convert the subject distribution to a JSON array
+    SubjectD_JSON={array, [ {struct, [{subject, Subject}, {amount, Amount}]} ||{Subject, Amount} <- SubjectD]},
+
+    %% convert the try count distribution to a JSON array
+    TryD_JSON={array, [ {struct, [{trycount, TryC}, {amount, Amount}]} ||{TryC, Amount} <- TryD]},
+
+    %% convert the domain distribution to a JSON array
+    DomainDTop10=lists:sublist(lists:reverse( lists:keysort(2, DomainD) ), 10),
+    DomainD_JSON={array, [ {struct, [{domain, Domain}, {amount, Amount}]} ||{Domain, Amount} <- DomainDTop10]},
+    
+    JSON={struct, [{trycount_distrib, TryD_JSON}, {subject_distrib, SubjectD_JSON}, {domain_distrib, DomainD_JSON}]},
+    json:encode(JSON).
+
+</erl>
+
+

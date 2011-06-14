@@ -1,0 +1,22 @@
+
+all: compile
+
+compile:
+	test -d ebin || mkdir ebin
+	@ERL@ -make
+	cd priv && make
+
+debug:
+	@ERL@ -make
+	cd priv && make debug
+
+clean:
+	rm -rf ./ebin/*.beam
+	rm -rf ./ebin/*.so
+	rm -rf ./*.beam
+
+run:
+	@ERL@ -pa ./ebin 
+
+docs:
+	@ERL@ -noshell -run edoc_run application "'setuid'" '"."' '[{title, "Erlang binding for "}, {hidden, false}, {private, false}]' -s erlang halt

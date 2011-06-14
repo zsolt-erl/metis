@@ -1,0 +1,34 @@
+{
+  "info" : 
+  {
+    "name" : "DarkTheme",
+
+    "summary" : "DarkTheme Contribution",
+    "description" : "Additional theme.",
+    
+    "homepage" : "http://contrib.qooxdoo.org/project/DarkTheme",
+
+    "license" : "LGPL/EPL",
+    "authors" : 
+    [
+      {
+        "name" : "Norbert Schröder (scro34)",
+        "email" : " schroeder AT scro34 DOT de"
+      }
+    ],
+
+    "version" : "trunk",
+    "qooxdoo-versions": ["1.2"]
+  },
+  
+  "provides" : 
+  {
+    "namespace"   : "darktheme",
+    "encoding"    : "utf-8",
+    "class"       : "source/class",
+    "resource"    : "source/resource",
+    "translation" : "source/translation",
+    "type"        : "theme"
+  }
+}
+

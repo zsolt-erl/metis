@@ -1,0 +1,90 @@
+<erl>
+
+-include("metis.hrl").
+
+%% used to convert the field names in the frontend to the field definitions the mapreduce funs need
+-define(FIELD_NAMES, [{"time", {time}}, {"node", {node}}, {"type", {type}}, {"from", {qc, from}}, 
+		      {"receiver", {qc, receiver}}, {"subject", {qc, opaque, subject}}]).
+
+%% bind the filter query variables to field names
+-define(FILTER_FIELDS, [{"fnode", "node"}, {"ftype", "type"}, {"ffrom", "from"}, {"frecv", "receiver"}, 
+			{"fsubject", "subject"}]).
+
+-define(GROUP_FIELDS, [{"gnode", "node"}, {"gtype", "type"}, {"gfrom", "from"}, {"grecv", "receiver"}, 
+		       {"gsubject", "subject"}]).
+
+
+out(A) ->
+    io:format('~n~n-----GROUP COUNT DATA REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    {ClientIP,_Port}=A#arg.client_ip_port,
+    ?mdebug(logViewerGroupingData, "request from:~p",[ClientIP]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    {ok,StartDateStr} = queryvar(A,"startdate"),
+    {ok,StartTimeStr} = queryvar(A,"starttime"),
+    {ok,EndDateStr}   = queryvar(A,"enddate"),
+    {ok,EndTimeStr}   = queryvar(A,"endtime"),
+
+    StartDateTime = httpd_util:convert_request_date(StartDateStr++" "++StartTimeStr++" GMT"),
+    EndDateTime   = httpd_util:convert_request_date(EndDateStr++" "++EndTimeStr++" GMT"),
+
+    %% create the {FieldDef, Regexp} tuples for the map function from the query
+    Filters=lists:foldl(fun({QueryVar, FieldName}, Acc)->
+				case queryvar(A, QueryVar) of
+				    undefined    -> Acc;
+				    {ok, "null"} -> Acc;
+				    {ok, Value}  -> 
+					FieldDef=?PGV(FieldName, ?FIELD_NAMES),
+					[{FieldDef, Value}|Acc]
+				end
+			end,
+			[], ?FILTER_FIELDS),
+
+    %% create the grouping [FieldDef] list from the query
+    Groups=lists:reverse(
+	     lists:foldl(fun({QueryVar, FieldName}, Acc)->
+				 case queryvar(A, QueryVar) of
+				     {ok, "true"}  -> 
+					 FieldDef=?PGV(FieldName, ?FIELD_NAMES),
+					 [FieldDef | Acc];
+				     _Other       -> Acc
+				 end
+			 end,
+			 [], ?GROUP_FIELDS)),
+    io:format("Filters:~p~nGroups:~p~n", [Filters, Groups]),
+    
+    GroupedCounts=riakfuns:get_filtered_grouped_counts(StartDateTime, EndDateTime, Filters, Groups),
+    
+    %% transform group definition to string
+    T=fun(GroupDef)-> misc:join([Value || {_FieldDef, Value} <- GroupDef], " | ") end,
+
+    T2=fun(TimeLine)-> {array, [{struct, [{time, Time}, {count, Count}]} || {Time, Count} <- TimeLine]} end,
+
+    io:format("Counts:~p~n",[GroupedCounts]),
+
+    AllTimeSlots=lists:flatten([ [ Slot || {Slot, _Val} <-TimeLine] 
+				 || {_GroupDef, [{sum, _Sum}, {tl, TimeLine}]} <- GroupedCounts]),
+    MinTimeSlot  = lists:min(AllTimeSlots),
+    MaxTimeSlot  = lists:max(AllTimeSlots),
+    io:format("~p  ~p  ~n",[MinTimeSlot, MaxTimeSlot]),
+    Start=calendar:datetime_to_gregorian_seconds(StartDateTime), 
+    End=calendar:datetime_to_gregorian_seconds(EndDateTime),
+    MinDateTime=calendar:gregorian_seconds_to_datetime(round((End-Start)/100*MinTimeSlot+Start)),
+    MaxDateTime=calendar:gregorian_seconds_to_datetime(round((End-Start)/100*MaxTimeSlot+Start)),
+
+    
+    JSONforGrid  = {array, [ {struct, [{group, T(GroupDef)}, {sum, Sum}]} || {GroupDef, [{sum, Sum}, {tl, _TimeLine}]} <- GroupedCounts]},
+    JSONforGraph = {array, [ {struct, [{group, T(GroupDef)}, {tl, T2(TimeLine)}]} || {GroupDef, [{sum, _Sum}, {tl, TimeLine}]} <- GroupedCounts]},
+
+    JSON = {struct, [{gridData, JSONforGrid}, 
+		     {graphData, JSONforGraph}, 
+		     {mindate, misc:datetime_to_string(MinDateTime)},
+		     {maxdate, misc:datetime_to_string(MaxDateTime)}
+		    ]},
+    io:format("JSON:~p~n",[JSON]),
+    json:encode(JSON).
+
+</erl>
+
+

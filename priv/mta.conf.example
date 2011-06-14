@@ -1,0 +1,168 @@
+# main config file
+
+# file format:
+#    [section]
+#      key:  value
+#      INCLUDE(FileName)
+#      key2: CONSULT(FileName2)
+#  
+#  [section]     is section heading, needs to be an atom
+#  key:          key in the section, needs to be an atom
+#  INCLUDE(FileName)    include an other file of the same format (if 
+#                       there is no section heading on the top of the
+#                       include file then it continues with the same 
+#                       section)
+#                       FileName is atom or string
+#  CONSULT(FileName)    call file:consult(FileName) and use result
+#                       as Value
+#
+# NOTES: 
+# key: value pair needs to be on one line, if value is longer then
+# put it in a separate file and use CONSULT
+
+
+[main]
+	# smtp server node name 
+	# atom()
+	server:			server@mx1.example.org
+
+	cookie:			metis
+
+	# smtp clients node names  
+	# each node handles a queue
+	# [atom()]     	    
+	clients:	 	[queue1@mx1.example.org, queue2@mx1.example.org, queue3@mx2.example.org]
+
+[server@mx1.example.org]
+	# ip address and port to bind to (default: {0,0,0,0}, 2525)
+	ip:  	     	     	"10.60.145.53"
+	port:			2525
+
+	# after binding to the listening port the server calls setuid() to switch to this user,
+	run_as:			"metis"
+
+	# list of domains this server handles mail for
+	# for an email to be accepted it needs to either be coming from or going to one of these domains 
+	# (envelope MAIL FROM and RCPT TO gets checked)
+	# this should at least contain the domain listed as local_fqdn
+	my_domains:		["example.org", "example.net"]
+
+	log_dir:		"priv/logs/"
+
+	# not used for now
+	incoming_processors:	[]
+
+	# event handler call backs for the statmngr event manager
+	event_handlers:		[hsimplecount, hriaklogger]
+
+	## rerouting table
+	## left side will be replaced by right side in envelope RCPT TO
+	## both the local part and the domain name are case sensitive
+	##
+	## [{string(), string()] | [{atom(), atom()}] | [{binary(), binary()}]
+	reroute:		CONSULT(priv/reroute.conf)
+
+
+# riak logging backend
+[riak]
+	# protocol buffer client ip
+	pb_ip:	   	  	 "127.0.0.1"
+	# protocol buffer client port
+	pb_port:   	  	  8087
+
+# frontend config section
+[gui]
+	# port gui gets served on
+	port:	   		8010
+
+	# gui refresh delay (main gui, eg. graphs, hard/softbounce) in seconds
+	main_loop_delay:	5
+
+	# main refresh loop exits after this many seconds
+	# (this is useful if you want to keep the gui open in the browser but don't want to keep generating traffic 
+	# for the backend, counter starts from 0 when you refresh the browser window)
+	# comment it out if you want the gui to run forever
+	main_loop_exit:		1200
+
+	# queue breakdown refresh delay in seconds
+	# the whole queue gets scanned with every refresh so this should not be too small
+	breakdown_loop_delay:	60
+	
+	# refresh delay for logviewer
+	logviewer_loop_delay:	10
+
+# smtp client configuration section
+# section title defines the client name
+[queue1@mx1.example.org]
+	# this is the ip address of the interface the client needs to send through
+	# only needed if the host has several network interfaces (otherwise comment it out)
+	ip:			{10.60.145.53}
+
+	# if these are present this node will simply relay to a smarthost
+	# (smartrelay_ip is ignored for now, it relays to port 25)
+	#smartrelay_host:	{10,60,145,160}
+	#smartrelay_ip:		25
+
+	# relay_from, relay_to specifies which emails this queue should get from the server
+	#
+	# if both are specified, then both have to match for an email to get into the queue
+	# if it changes when the queue is not empty the email in the queue will still get processed
+	# this is only used by the server to distribute the emails between queues
+	# format: [RelayElem::relay_elem()]
+	#         relay_elem:: [LocalPart::atom()] ++ '@' ++ [FQDN::atom()]
+	#	  both LocalPArt and FQDN needs to be lower case
+	#         eg.: joe@example.com   or  @example.com   or   root@
+
+	relay_from:		[example.org]
+	relay_to:		[hotmail.com]
+
+	# local aliases
+	# this is case sensitive
+	aliases:		CONSULT(priv/aliases.conf)
+
+	# this is the dir on the client node, if 2 clients are on the same host queue_dirs need to be different
+	queue_dir:	   	"priv/queue1/"
+
+	# delay between queue runs in seconds
+	queue_run_interval:	30
+
+	# it'll try to send an email max_try number of times before deleting it from the queue
+	max_try:		8
+
+	# affects the delay between subsequents tries of sending a msg
+	# Delay=Aging_basis^Try_count   
+	# eg: if aging_basis is 5, after the second try it'll wait 5^2=125 sec before the 3rd try
+	# (obviously it only tries when there's a queue run so the actual wait time is also 
+	#  affected by the queue_run_interval)
+	aging_basis:		5
+
+	# connection manager connection time window in seconds 
+	# (after this time connection will be closed with the recipient domain)
+	max_conn_time:		60
+
+
+
+[queue2@mx1.example.org]
+	ip:			{10,60,145,54}
+	relay_from:		[example.org]
+	relay_to:		[yahoo.com]
+	aliases:		CONSULT(priv/aliases.conf)
+	queue_dir:	   	"priv/queue2/"
+	queue_run_interval:	10
+	max_try:		8
+	aging_basis:		5
+	max_conn_time:		60
+	domain_control:         CONSULT(priv/domain.conf)
+
+
+[queue3@mx2.example.org]
+	ip:			{10,60,145,80}
+	relay_from:		[example.net]
+	relay_to:		[]
+	aliases:		CONSULT(priv/aliases.conf)
+	queue_dir:	   	"priv/queue3/"
+	queue_run_interval:	30
+	max_try:		8
+	aging_basis:		5
+	max_conn_time:		60
+	domain_control:         CONSULT(priv/domain.conf)

@@ -1,0 +1,78 @@
+<erl>
+
+-include("metis.hrl").
+
+%% used to convert the field names in the frontend to the field definitions the mapreduce funs need
+-define(FIELD_NAMES, [{"time", {time}}, {"node", {node}}, {"type", {type}}, {"from", {qc, from}}, 
+		      {"receiver", {qc, receiver}}, {"subject", {qc, opaque, subject}}]).
+
+%% bind the filter query variables to field names
+-define(FILTER_FIELDS, [{"fnode", "node"}, {"ftype", "type"}, {"ffrom", "from"}, {"frecv", "receiver"}, 
+			{"fsubject", "subject"}]).
+
+
+out(A) ->
+%%    io:format('~n~n-----RAW DATA REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    {ClientIP,_Port}=A#arg.client_ip_port,
+    ?mdebug(logViewerRowData, "rowdata request from:~p",[ClientIP]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    {ok,StartDateStr} = queryvar(A,"startdate"),
+    {ok,StartTimeStr} = queryvar(A,"starttime"),
+    {ok,EndDateStr}   = queryvar(A,"enddate"),
+    {ok,EndTimeStr}   = queryvar(A,"endtime"),
+
+    {ok,FirstRowStr}  = queryvar(A,"firstrow"),
+    {ok,LastRowStr}   = queryvar(A,"lastrow"),
+
+    StartDateTime = httpd_util:convert_request_date(StartDateStr++" "++StartTimeStr++" GMT"),
+    EndDateTime   = httpd_util:convert_request_date(EndDateStr++" "++EndTimeStr++" GMT"),
+
+    %% create the {FieldDef, Regexp} tuples for the map function from the query
+    Filters=lists:foldl(fun({QueryVar, FieldName}, Acc)->
+				case queryvar(A, QueryVar) of
+				    undefined    -> Acc;
+				    {ok, "null"} -> Acc;
+				    {ok, Value}  -> 
+					FieldDef=?PGV(FieldName, ?FIELD_NAMES),
+					[{FieldDef, Value}|Acc]
+				end
+			end,
+			[], ?FILTER_FIELDS),
+
+    AllEntries=riakfuns:get_filtered_log_entries(StartDateTime, EndDateTime, Filters),
+
+    %% row numbering starts at 0 in the qooxdoo table
+    First=list_to_integer(FirstRowStr)+1,
+    LenAll=length(AllEntries),
+    Last=case list_to_integer(LastRowStr) of
+	     L1 when L1<LenAll -> L1+1;
+	     _L2               -> LenAll
+	 end,
+
+    NeededEntries = lists:sublist(AllEntries, First, Last-First+1),
+    
+    %% create a proplist of {fieldname, value} for each Entry
+    JSONEntries=
+	lists:map(fun(Entry)->
+			  {struct, 
+			   lists:map(fun
+					 ({FieldName, FieldDef})->
+					     Val=riakfuns:get_field(FieldDef, Entry),
+					     JSONVal=
+						 case Val of
+						     Atom when is_atom(Atom)      -> atom_to_list(Atom);
+						     DateTime = {{_,_,_},{_,_,_}} -> misc:datetime_to_string(DateTime);
+						     Str when is_list(Str)        -> Str
+						 end,
+					     {FieldName, JSONVal}
+				     end, ?FIELD_NAMES)
+			  }
+		  end, NeededEntries),
+    JSON={array, JSONEntries},
+    json:encode(JSON).
+
+</erl>
+
+

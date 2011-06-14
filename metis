@@ -1,0 +1,105 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -pa ebin/
+
+-define( RIAKC,      "lib/riakc-1.0.1/ebin" ).
+-define( PROTOBUFFS, "lib/protobuffs-0.5.0/ebin" ).
+-define( SETUID,     "lib/erlang-setuid/ebin" ).
+-define( LOG4ERL,    "lib/log4erl/ebin" ).
+-define( YAWS,       "lib/yaws/ebin" ).
+
+-define( COMMANDS, ["start", "stop", "ping", "status", "help", "web-start", "web-stop", "log"] ).
+ 
+main([]) -> usage();
+main([Command|_]) ->
+    ServerName=misc:multistrip( os:cmd("grep -v ' *#' priv/mta.conf | grep 'server:' | awk '{print $2}'"), " \t\n" ),
+    ServerNode=list_to_atom(ServerName),
+    Cookie=misc:multistrip( os:cmd("grep 'cookie:' priv/mta.conf | awk '{print $2}'"), " \t\n" ),
+
+    %% check if net_kernel can be started and server node can be reached
+    %% if net_kernel doesn't start there's no epmd process running which means that the server node is not running
+    error_logger:tty(false),
+    {NetKernel, Pong}=
+	case net_kernel:start([list_to_atom("_admin_"++ServerName)]) of
+	    {ok, _Pid} -> 
+		erlang:set_cookie(node(), list_to_atom(Cookie)),
+		net_kernel:hidden_connect_node(ServerNode),
+		P=net_adm:ping(ServerNode),
+		{ok, P};
+	    _Else      -> 
+		{error, undefined}
+	end,
+    
+    %% io:format("~p:~p - cookie: ~p~n",[ServerName, node(), Cookie]),
+
+    case {NetKernel, Pong, Command} of
+	{_, _, "help"} -> usage();
+
+	{error, _, "start"} ->
+	    os:cmd("epmd -daemon"),
+	    start_server(ServerName, Cookie);
+	{error, _, _} ->
+	    io:format("Server is not running. (net_kernel:~p, ping:~p)~n", [NetKernel, Pong]);
+	{ok, pang, "start"} ->
+	    start_server(ServerName, Cookie);
+	{ok, pang, _} ->
+	    io:format("Server is not running. (net_kernel:~p, ping:~p)~n", [NetKernel, Pong]);		
+	{ok, pong, "start"} ->
+	    io:format("Server is already running!~n");
+	{ok, pong, "stop"} -> 
+	    rpc:call(ServerNode, metis, stop, [], 60000),
+	    rpc:call(ServerNode, init, stop, []),
+	    io:format("Metis stopped~n");
+	{ok, pong, "status"} ->
+	    rpc:call(ServerNode, metis, info, [], 60000);
+	{ok, pong, "web-start"} ->
+	    io:format("Starting web server~n"),
+	    Res=rpc:call(ServerNode, webgui, start, [ServerNode], 60000),
+	    case Res of
+		{ok, Port} ->
+		    [_,Domain]=string:tokens(ServerName, "@"),
+		    io:format("Web server started~nAccess web gui at: http://~s:~p/gui/~n", [Domain,Port]);
+		{error, Error} ->
+		    io:format("Error starting web server:~p~n", [Error]);
+		Other ->
+		    io:format("Failed to execute command, reason:~p~n", [Other])
+	    end;
+	{ok, pong, "web-stop"} ->
+	    io:format("Stopping web server~n"),
+	    Res=rpc:call(ServerNode, webgui, stop, [], 60000),
+	    case Res of 
+		ok             -> io:format("Stopped.~n");
+		{error, Error} -> io:format("Error stopping web server:~p~n", [Error]);
+		Other          -> io:format("Failed to execute command, reason:~p~n", [Other])
+	    end;
+	{ok, pong, "log"} ->
+	    io:format("Getting log from server~n"),
+	    Res=rpc:call(ServerNode, stat_mngr, call, [hriaklogger, get_last100_events], 60000),
+	    lists:foreach( fun(R)->io:format("~p~n", [R]) end, Res);
+	{ok, pong, "ping"} ->
+	    io:format("Server is running.~n");
+	{ok, pong, _Cmd} ->
+	    io:format("Invalid command.~n"),
+	    usage()
+    end.
+
+
+
+usage()->
+    io:format("Usage: metis {~s}~n", [ string:join(?COMMANDS, "|")]).
+
+
+start_server(ServerName, Cookie)->
+    Cmd = string:join([
+		       %% "xterm -geometry 135x24 -e",
+		       "erl",
+		       "-detached",
+		       "-name", ServerName, 
+		       "-setcookie", Cookie,
+		       "-pa ebin/ lib/*/ebin/ deps/*/ebin/ deps/*/deps/*/ebin",
+		       "-boot start_sasl",
+		       "-config priv/metis",
+		       "-s metis"], " "),
+    
+    open_port({spawn, Cmd}, []),
+    io:format("Metis started~n").

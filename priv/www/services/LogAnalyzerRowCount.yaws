@@ -1,0 +1,44 @@
+<erl>
+
+-include("metis.hrl").
+
+%% used to convert the field names in the frontend to the field definitions the mapreduce funs need
+-define(FIELD_NAMES, [{"time", {time}}, {"node", {node}}, {"type", {type}}, {"from", {qc, from}}, 
+		      {"recv", {qc, receiver}}, {"subject", {qc, opaque, subject}}]).
+
+%% bind the filter query variables to field names
+-define(FILTER_FIELDS, [{"fnode", "node"}, {"ftype", "type"}, {"ffrom", "from"}, {"frecv", "recv"}, {"fsubject", "subject"}]).
+
+
+out(A) ->
+%%    io:format('~n~n-----RAW ROWCOUNT REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    {ClientIP,_Port}=A#arg.client_ip_port,
+    ?mdebug(logViewerRowCount, "rowcount request from:~p",[ClientIP]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    {ok,StartDateStr} = queryvar(A,"startdate"),
+    {ok,StartTimeStr} = queryvar(A,"starttime"),
+    {ok,EndDateStr}   = queryvar(A,"enddate"),
+    {ok,EndTimeStr}   = queryvar(A,"endtime"),
+
+    StartDateTime = httpd_util:convert_request_date(StartDateStr++" "++StartTimeStr++" GMT"),
+    EndDateTime   = httpd_util:convert_request_date(EndDateStr++" "++EndTimeStr++" GMT"),
+
+    %% create the {FieldDef, Regexp} tuples for the map function from the query
+    Filters=lists:foldl(fun({QueryVar, FieldName}, Acc)->
+				case queryvar(A, QueryVar) of
+				    undefined    -> Acc;
+				    {ok, "null"} -> Acc;
+				    {ok, Value}  -> 
+					FieldDef=?PGV(FieldName, ?FIELD_NAMES),
+					[{FieldDef, Value}|Acc]
+				end
+			end,
+			[], ?FILTER_FIELDS),
+
+    RowCount=riakfuns:get_filtered_entry_count(StartDateTime, EndDateTime, Filters),
+    json:encode(RowCount).
+</erl>
+
+

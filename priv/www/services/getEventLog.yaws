@@ -1,0 +1,40 @@
+<erl>
+
+-include("metis.hrl").
+
+out(A) ->
+%%    io:format('~n-----EVENT LOG REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    ?mdebug(getEventLog, "Riak Log Request from:~p~n",[element(1,A#arg.client_ip_port)]),
+    {content, "text/html", create_response(A)}.
+
+
+create_response(A) ->
+    MasterNode=A#arg.opaque,
+    ?minfo(getMasterNode, "master node:~p", [MasterNode]),
+    LogEntries=rpc:call(MasterNode, stat_mngr, call, [hriaklogger, get_last100_events], 60000),
+    JSONLogEntries=  
+	lists:map(fun(LogEntry)->
+			  #riaklogentry{node=Node,
+					time=Time,
+					type=Type,
+					qc=QC} = LogEntry,
+			  #qc{from=From,
+	 		      receiver=Recv,
+	 		      try_count=TryCount,
+			      opaque=Opaque} = QC,
+			  Subject=proplists:get_value(subject, Opaque, ""),
+			  {struct, [
+				    {time, misc:datetime_to_string(Time)},
+				    {node, atom_to_list(Node)}, 
+				    {type, atom_to_list(Type)},
+				    {from, From},
+				    {recv, Recv},
+				    {subject, Subject},
+				    {try_count, TryCount}
+				   ]}
+	 	  end, LogEntries),
+
+    JSON={array, JSONLogEntries},
+    json:encode(JSON).
+
+</erl>

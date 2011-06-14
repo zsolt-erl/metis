@@ -1,0 +1,11 @@
+<erl>
+
+out(A) ->
+
+    io:format('~n-----GUI CONFIG REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    JSON={struct, rpc:call(A#arg.opaque, conf, getSection, [gui])},
+    json:encode(JSON).
+</erl>

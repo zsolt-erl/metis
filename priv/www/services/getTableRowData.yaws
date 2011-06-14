@@ -1,0 +1,59 @@
+<erl>
+
+-include("metis.hrl").
+
+out(A) ->
+    io:format('~n-----TABLE ROW DATA REQUEST-----~n~p~n---------------------~n', [yaws_api:parse_query(A)]),
+    {content, "text/html", create_response(A)}.
+
+create_response(A) ->
+    %% {ok,From}      = queryvar(A,"from"),
+    %% {ok,To}        = queryvar(A,"to"),
+    %% {ok,SortOrder} = queryvar(A,"sortorder"),
+    %% {ok,SortIndex} = queryvar(A,"sortindex"),
+
+    RecTransform=							
+	fun(Record, Acc)-> 
+		{counter, C200H, C200D, C200T, _ChangeDate1}=Record#domainctrl.c200,
+		C200Str="("++integer_to_list(C200H)++","++integer_to_list(C200D)++","++integer_to_list(C200T)++")",
+
+		{counter, C4XXH, C4XXD, C4XXT, _ChangeDate2}=Record#domainctrl.c4xx,
+		C4XXStr="("++integer_to_list(C4XXH)++","++integer_to_list(C4XXD)++","++integer_to_list(C4XXT)++")",
+
+		{counter, C5XXH, C5XXD, C5XXT, _ChangeDate3}=Record#domainctrl.c5xx,
+		C5XXStr="("++integer_to_list(C5XXH)++","++integer_to_list(C5XXD)++","++integer_to_list(C5XXT)++")",
+
+		HostMsgQ=lists:flatten(
+			   lists:map(fun(X)->io_lib:format("~p~n",[X]) end, 
+				     queue:to_list(Record#domainctrl.host_msg_queue))
+			  ),
+		Transformed=
+		    {struct, 
+		     [{dmid, Record#domainctrl.dmid},
+		      {regexp, Record#domainctrl.regexp},
+		      {state, atom_to_list(Record#domainctrl.state)},
+		      {daily_limit, Record#domainctrl.daily_limit},
+		      {hourly_limit, Record#domainctrl.hourly_limit},
+		      {max_conn, Record#domainctrl.max_conn},
+		      {msg_per_conn, Record#domainctrl.msg_per_conn},
+		      {relay_type, atom_to_list(Record#domainctrl.relay_type)},
+		      {c_open_conn, Record#domainctrl.c_open_conn},
+		      {c200, C200Str},
+		      {c4xx, C4XXStr},
+		      {c5xx, C5XXStr},
+		      {host_msg_queue, HostMsgQ}]},
+		Acc++[Transformed]
+	end,
+
+    Transaction=fun()->mnesia:foldl(RecTransform, [], domainctrl) end,
+
+    %% Records contain [{struct, [...]}] that can be converted to JSON 
+    {atomic, Records}=mnesia:transaction(Transaction),
+
+    JSON={array, Records},
+    json:encode(JSON).
+
+
+</erl>
+
+
