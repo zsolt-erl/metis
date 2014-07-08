@@ -4,9 +4,20 @@ Metis is a Erlang/OTP Mail Transfer Agent based on the [gen_smtp][] library.
 I couldn't find an open source MTA that was able to do throttling of the outgoing mail so I decided to write one. Mail log analysis was also a problem (busy mail server = huge textfiles as logs) therefore Metis uses Riak as the mail log backend.
 
 ###Screenshots
-![Stats and queues](/doc/screenshots/metis1.png?raw=true "Stats and queues")
-![Queue details](/doc/screenshots/metis2.png?raw=true "Queue details")
-![Log analysis](/doc/screenshots/metis3.png?raw=true "Log analysis")
+####Stats and Queues
+
+<img alt="Stats and Queues" src="/doc/screenshots/metis1.png" style="width: 400px;"/>
+
+
+####Queue Details
+
+![Queue Details](/doc/screenshots/metis2.png?raw=true =400x)
+
+
+####Log Analysis
+
+![Log Analysis](/doc/screenshots/metis3.png?raw=true =400x)
+
 
 
 ###Main features
