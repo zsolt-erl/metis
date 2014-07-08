@@ -1,7 +1,7 @@
 ##Screenshots
 ####Stats and Queues
 
-![Stats and Queues](/doc/screenshots/metis2.png?raw=true =400x)
+![Stats and Queues](/doc/screenshots/metis1.png?raw=true =400x)
 
 
 ####Queue Details
